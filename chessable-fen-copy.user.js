@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chessable FEN Copy
 // @namespace    https://github.com/cpamap/chessable-fen-copy
-// @version      0.2.0
+// @version      0.3.0
 // @description  Fügt einen Knopf hinzu, der die aktuelle Brettstellung auf Chessable als FEN in die Zwischenablage kopiert.
 // @author       you
 // @match        https://www.chessable.com/*
@@ -13,122 +13,126 @@
 (function () {
     'use strict';
 
-    // ---------- FEN extraction from chessground DOM ----------
+    // ---------- FEN extraction ----------
+    //
+    // Chessable uses cm-chessboard. Each square is a div with
+    // `data-square="a8"` and contains a child div with `data-piece="bR"`
+    // (color in lowercase: w/b, role in uppercase: K Q R B N P).
+    // We also keep a chessground fallback in case Chessable changes engines.
 
-    // chessground piece class -> FEN char
-    const PIECE_TO_FEN = {
+    // cm-chessboard data-piece -> FEN char
+    const CM_PIECE_TO_FEN = {
+        wK: 'K', wQ: 'Q', wR: 'R', wB: 'B', wN: 'N', wP: 'P',
+        bK: 'k', bQ: 'q', bR: 'r', bB: 'b', bN: 'n', bP: 'p',
+    };
+
+    // chessground "white king" etc. -> FEN char (legacy fallback)
+    const CG_PIECE_TO_FEN = {
         'white king':   'K', 'white queen':  'Q', 'white rook':   'R',
         'white bishop': 'B', 'white knight': 'N', 'white pawn':   'P',
         'black king':   'k', 'black queen':  'q', 'black rook':   'r',
         'black bishop': 'b', 'black knight': 'n', 'black pawn':   'p',
     };
 
-    function getBoardEl() {
-        // chessground renders into <cg-board> inside <cg-container> inside <.cg-wrap>
-        return document.querySelector('cg-board')
-            || document.querySelector('.cg-board')
-            || document.querySelector('[class*="cg-board"]')
-            || null;
-    }
-
-    function getWrapEl() {
-        return document.querySelector('.cg-wrap')
-            || document.querySelector('cg-container')
-            || document.querySelector('[class*="cg-wrap"]')
-            || null;
-    }
-
     function debugDump() {
-        const board = getBoardEl();
-        const wrap  = getWrapEl();
-        const pieces = board ? board.querySelectorAll('piece') : [];
+        const cmSquares = document.querySelectorAll('[data-square]');
+        const cmPieces  = document.querySelectorAll('[data-piece]');
+        const cgBoard   = document.querySelector('cg-board, .cg-board, [class*="cg-board"]');
         console.log('[Chessable FEN Copy] debug:', {
             url: location.href,
-            boardFound: !!board,
-            wrapFound: !!wrap,
-            pieceCount: pieces.length,
-            firstPiece: pieces[0]
-                ? { class: pieces[0].className, style: pieces[0].getAttribute('style') }
+            cmSquaresFound: cmSquares.length,
+            cmPiecesFound:  cmPieces.length,
+            firstCmPiece: cmPieces[0]
+                ? { piece: cmPieces[0].getAttribute('data-piece'),
+                    parentSquare: cmPieces[0].closest('[data-square]')?.getAttribute('data-square') }
                 : null,
-            cgWrapClasses: wrap ? wrap.className : null,
+            cgBoardFound: !!cgBoard,
         });
     }
 
-    function getOrientation() {
-        const wrap = getWrapEl();
-        if (!wrap) return 'white';
-        if (wrap.classList.contains('orientation-black')) return 'black';
-        // some versions put it on a parent
-        let p = wrap.parentElement;
-        while (p) {
-            if (p.classList && p.classList.contains('orientation-black')) return 'black';
-            if (p.classList && p.classList.contains('orientation-white')) return 'white';
-            p = p.parentElement;
+    // ---- cm-chessboard extraction (Chessable) ----
+
+    function extractBoardCm() {
+        const squares = document.querySelectorAll('[data-square]');
+        if (!squares.length) return null;
+
+        const grid = Array.from({ length: 8 }, () => Array(8).fill(null));
+        let sawAnyPiece = false;
+
+        for (const sq of squares) {
+            const name = sq.getAttribute('data-square');
+            if (!name || name.length !== 2) continue;
+            const file = name.charCodeAt(0) - 'a'.charCodeAt(0); // 0..7
+            const rank = parseInt(name[1], 10) - 1;              // 0..7
+            if (file < 0 || file > 7 || rank < 0 || rank > 7) continue;
+
+            const pieceEl = sq.querySelector('[data-piece]');
+            if (!pieceEl) continue;
+            const piece = pieceEl.getAttribute('data-piece');
+            const fenChar = CM_PIECE_TO_FEN[piece];
+            if (!fenChar) continue;
+
+            // grid row 0 = rank 8 (top), row 7 = rank 1 (bottom)
+            grid[7 - rank][file] = fenChar;
+            sawAnyPiece = true;
         }
-        return 'white';
+
+        if (!sawAnyPiece) return null;
+        return placementFromGrid(grid);
     }
 
+    // ---- chessground extraction (legacy fallback) ----
+
     function parseTranslate(style) {
-        // matches translate(12px, 34px)
         const m = /translate\(\s*(-?[\d.]+)px\s*,\s*(-?[\d.]+)px\s*\)/.exec(style);
         if (!m) return null;
         return { x: parseFloat(m[1]), y: parseFloat(m[2]) };
     }
 
-    function extractBoard() {
-        const board = getBoardEl();
+    function extractBoardCg() {
+        const board = document.querySelector('cg-board, .cg-board, [class*="cg-board"]');
         if (!board) return null;
 
         const rect = board.getBoundingClientRect();
         const sq = rect.width / 8;
         if (!sq || !isFinite(sq)) return null;
 
-        const orientation = getOrientation();
-        const grid = Array.from({ length: 8 }, () => Array(8).fill(null));
+        const wrap = document.querySelector('.cg-wrap, cg-container, [class*="cg-wrap"]');
+        let orientation = 'white';
+        for (let p = wrap; p; p = p.parentElement) {
+            if (p.classList?.contains('orientation-black')) { orientation = 'black'; break; }
+            if (p.classList?.contains('orientation-white')) { orientation = 'white'; break; }
+        }
 
+        const grid = Array.from({ length: 8 }, () => Array(8).fill(null));
         const pieces = board.querySelectorAll('piece');
         if (!pieces.length) return null;
 
         for (const p of pieces) {
-            // skip ghost / dragging artifacts
             if (p.classList.contains('ghost') || p.classList.contains('fading')) continue;
-
             const cls = Array.from(p.classList);
-            // find color+role match
             const color = cls.find(c => c === 'white' || c === 'black');
             const role  = cls.find(c => ['king','queen','rook','bishop','knight','pawn'].includes(c));
             if (!color || !role) continue;
-
-            const fenChar = PIECE_TO_FEN[`${color} ${role}`];
+            const fenChar = CG_PIECE_TO_FEN[`${color} ${role}`];
             if (!fenChar) continue;
 
             const t = parseTranslate(p.style.transform || p.getAttribute('style') || '');
             if (!t) continue;
 
-            // file/rank in display coords (0..7), with (0,0) = top-left of the rendered board
             const colIdx = Math.round(t.x / sq);
             const rowIdx = Math.round(t.y / sq);
             if (colIdx < 0 || colIdx > 7 || rowIdx < 0 || rowIdx > 7) continue;
 
-            // map display coords to actual (file, rank)
-            //   orientation white: top-left = a8  -> file = colIdx,    rank = 7 - rowIdx
-            //   orientation black: top-left = h1  -> file = 7 - colIdx, rank = rowIdx
-            let file, rank;
-            if (orientation === 'white') {
-                file = colIdx;
-                rank = 7 - rowIdx;
-            } else {
-                file = 7 - colIdx;
-                rank = rowIdx;
-            }
-
-            // grid index: row 0 = rank 8 (top), row 7 = rank 1 (bottom)
-            const gridRow = 7 - rank;
-            const gridCol = file;
-            grid[gridRow][gridCol] = fenChar;
+            const file = orientation === 'white' ? colIdx : 7 - colIdx;
+            const rank = orientation === 'white' ? 7 - rowIdx : rowIdx;
+            grid[7 - rank][file] = fenChar;
         }
 
-        // build placement
+        return placementFromGrid(grid);
+    }
+
+    function placementFromGrid(grid) {
         const rows = grid.map(row => {
             let s = '', empty = 0;
             for (const c of row) {
@@ -141,15 +145,18 @@
             if (empty) s += empty;
             return s;
         });
-
         return rows.join('/');
     }
 
+    function extractBoard() {
+        return extractBoardCm() || extractBoardCg();
+    }
+
     function detectSideToMove() {
-        // Best-effort: look for "Black to move" / "White to move" in visible text.
+        // Best-effort: look for "Black/White to move/play" in visible text.
         const txt = document.body.innerText || '';
-        if (/black\s+to\s+move/i.test(txt)) return 'b';
-        if (/white\s+to\s+move/i.test(txt)) return 'w';
+        if (/black\s+to\s+(?:move|play)/i.test(txt)) return 'b';
+        if (/white\s+to\s+(?:move|play)/i.test(txt)) return 'w';
         return null;
     }
 

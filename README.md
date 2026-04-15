@@ -29,15 +29,20 @@ Die kopierte FEN-Zeile lässt sich direkt z.B. in
 
 ## Wie es funktioniert
 
-Chessable rendert das Brett mit [chessground](https://github.com/lichess-org/chessground).
+Chessable rendert das Brett mit
+[cm-chessboard](https://github.com/shaack/cm-chessboard). Jedes Feld trägt ein
+`data-square="a8"`-Attribut und enthält ggf. ein Kind mit
+`data-piece="bR"` (Farbe `w`/`b`, Figur `K Q R B N P`).
+
 Das Skript:
 
-1. Liest alle `<piece>`-Elemente aus `<cg-board>`.
-2. Übersetzt die Pixel-Position aus `transform: translate(x, y)` in Felder
-   (über die gemessene Brettbreite / 8).
-3. Berücksichtigt die Brettausrichtung (`orientation-white` / `orientation-black`).
-4. Versucht aus dem sichtbaren Text „White/Black to move" zu lesen.
-5. Baut daraus die FEN-Zeile.
+1. Iteriert über alle `[data-square]`-Elemente und liest deren `[data-piece]`-Kind.
+2. Mappt `wK`/`bP`/… auf die FEN-Zeichen (`K`, `p`, …).
+3. Versucht aus dem sichtbaren Text „White/Black to move/play" den Seitenzug zu lesen.
+4. Setzt den Rest mit Defaults zusammen.
+
+Als Fallback ist auch ein chessground-Parser eingebaut, falls Chessable die
+Render-Engine wechselt.
 
 ## Limitationen
 
