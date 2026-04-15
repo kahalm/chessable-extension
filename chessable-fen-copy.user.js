@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Chessable FEN Copy
+// @name         Chessable FEN Copy + Search
 // @namespace    https://github.com/cpamap/chessable-fen-copy
-// @version      0.3.0
-// @description  Fügt einen Knopf hinzu, der die aktuelle Brettstellung auf Chessable als FEN in die Zwischenablage kopiert.
+// @version      0.4.0
+// @description  Fügt zwei Knöpfe hinzu: aktuelle Brettstellung als FEN in die Zwischenablage kopieren bzw. auf chessable.com nach Kursen mit dieser Stellung suchen.
 // @author       you
 // @match        https://www.chessable.com/*
 // @match        https://chessable.com/*
@@ -196,26 +196,27 @@
         return ok;
     }
 
+    // ---------- Chessable search URL ----------
+
+    function chessableSearchUrl(fen) {
+        // Chessable's FEN search URL replaces "/" in the placement with "U"
+        // and URL-encodes the rest (spaces -> %20). Trailing slash included.
+        const encoded = encodeURIComponent(fen.replace(/\//g, 'U'));
+        return `https://www.chessable.com/courses/fen/${encoded}/`;
+    }
+
     // ---------- UI ----------
 
-    const BTN_ID = 'chessable-fen-copy-btn';
+    const CONTAINER_ID = 'chessable-fen-tools';
+    const COPY_BTN_ID  = 'chessable-fen-copy-btn';
+    const SEARCH_BTN_ID = 'chessable-fen-search-btn';
 
-    function createButton() {
-        if (document.getElementById(BTN_ID)) return;
-
-        const btn = document.createElement('button');
-        btn.id = BTN_ID;
-        btn.type = 'button';
-        btn.textContent = 'Copy FEN';
+    function styleButton(btn, bg) {
         Object.assign(btn.style, {
-            position: 'fixed',
-            bottom: '16px',
-            right: '16px',
-            zIndex: '2147483647',
             padding: '8px 12px',
             fontSize: '13px',
             fontFamily: 'system-ui, sans-serif',
-            background: '#2e7d32',
+            background: bg,
             color: '#fff',
             border: 'none',
             borderRadius: '6px',
@@ -223,28 +224,59 @@
             cursor: 'pointer',
             opacity: '0.9',
         });
-
         btn.addEventListener('mouseenter', () => btn.style.opacity = '1');
         btn.addEventListener('mouseleave', () => btn.style.opacity = '0.9');
+    }
 
-        btn.addEventListener('click', () => {
+    function createUi() {
+        if (document.getElementById(CONTAINER_ID)) return;
+
+        const wrap = document.createElement('div');
+        wrap.id = CONTAINER_ID;
+        Object.assign(wrap.style, {
+            position: 'fixed',
+            bottom: '16px',
+            right: '16px',
+            zIndex: '2147483647',
+            display: 'flex',
+            gap: '8px',
+        });
+
+        const copyBtn = document.createElement('button');
+        copyBtn.id = COPY_BTN_ID;
+        copyBtn.type = 'button';
+        copyBtn.textContent = 'Copy FEN';
+        styleButton(copyBtn, '#2e7d32');
+        copyBtn.addEventListener('click', () => {
             const fen = buildFEN();
-            if (!fen) {
-                flash(btn, 'No board found', '#c62828');
-                debugDump();
-                return;
-            }
+            if (!fen) { flash(copyBtn, 'No board found', '#c62828'); debugDump(); return; }
             const ok = copyToClipboard(fen);
             if (ok) {
-                flash(btn, 'Copied!', '#1565c0');
+                flash(copyBtn, 'Copied!', '#1565c0');
                 console.log('[Chessable FEN Copy]', fen);
             } else {
-                flash(btn, 'Copy failed', '#c62828');
+                flash(copyBtn, 'Copy failed', '#c62828');
                 console.log('[Chessable FEN Copy] FEN (manual copy):', fen);
             }
         });
 
-        document.body.appendChild(btn);
+        const searchBtn = document.createElement('button');
+        searchBtn.id = SEARCH_BTN_ID;
+        searchBtn.type = 'button';
+        searchBtn.textContent = 'Search FEN';
+        styleButton(searchBtn, '#1565c0');
+        searchBtn.addEventListener('click', () => {
+            const fen = buildFEN();
+            if (!fen) { flash(searchBtn, 'No board found', '#c62828'); debugDump(); return; }
+            const url = chessableSearchUrl(fen);
+            console.log('[Chessable FEN Search]', fen, '->', url);
+            const win = window.open(url, '_blank', 'noopener');
+            if (!win) flash(searchBtn, 'Popup blocked', '#c62828');
+        });
+
+        wrap.appendChild(copyBtn);
+        wrap.appendChild(searchBtn);
+        document.body.appendChild(wrap);
     }
 
     function flash(btn, text, color) {
@@ -258,18 +290,18 @@
         }, 1200);
     }
 
-    // Always show the button on chessable.com; clicking will tell the user
+    // Always show the buttons on chessable.com; clicking will tell the user
     // if no board is found (and dump debug info to the console).
-    function ensureButton() {
-        createButton();
+    function ensureUi() {
+        createUi();
     }
 
-    if (document.body) ensureButton();
-    else document.addEventListener('DOMContentLoaded', ensureButton, { once: true });
+    if (document.body) ensureUi();
+    else document.addEventListener('DOMContentLoaded', ensureUi, { once: true });
 
-    // Keep it alive across SPA navigations.
+    // Keep the UI alive across SPA navigations.
     const mo = new MutationObserver(() => {
-        if (!document.getElementById(BTN_ID)) ensureButton();
+        if (!document.getElementById(CONTAINER_ID)) ensureUi();
     });
     mo.observe(document.documentElement, { childList: true, subtree: true });
 })();

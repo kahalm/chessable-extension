@@ -1,8 +1,12 @@
-# Chessable FEN Copy
+# Chessable FEN Copy + Search
 
-Tampermonkey-Userscript für [chessable.com](https://www.chessable.com): blendet einen
-**„Copy FEN"**-Knopf unten rechts auf der Seite ein, der die aktuelle Brettstellung
-als FEN in die Zwischenablage kopiert.
+Tampermonkey-Userscript für [chessable.com](https://www.chessable.com): blendet
+unten rechts zwei Knöpfe ein:
+
+- **Copy FEN** — kopiert die aktuelle Brettstellung als FEN in die Zwischenablage.
+- **Search FEN** — öffnet die Chessable-FEN-Suche
+  (`https://www.chessable.com/courses/fen/...`) für die aktuelle Stellung in
+  einem neuen Tab.
 
 ## Installation
 
@@ -18,14 +22,28 @@ fängt das Schema ab und bietet die Installation an.
 ## Benutzung
 
 1. Auf chessable.com eine Trainer- oder Lern-Seite mit Brett öffnen.
-2. Unten rechts erscheint ein grüner **„Copy FEN"**-Knopf.
-3. Klick → die aktuelle Stellung wird als FEN in die Zwischenablage kopiert.
-   - Erfolg: kurz blau **„Copied!"**
-   - Kein Brett gefunden: kurz rot **„No board found"** (Debug-Info in der Konsole)
+2. Unten rechts erscheinen zwei Knöpfe:
+   - Grün **„Copy FEN"** → kopiert die FEN in die Zwischenablage.
+   - Blau **„Search FEN"** → öffnet die Chessable-FEN-Suche in neuem Tab.
+3. Statusmeldungen am Knopf:
+   - **„Copied!"** — Kopieren erfolgreich.
+   - **„No board found"** — kein Brett im DOM erkannt (Debug-Info in der Konsole).
+   - **„Popup blocked"** — der Browser hat den neuen Tab blockiert; ggf. Popups
+     für chessable.com erlauben.
 
 Die kopierte FEN-Zeile lässt sich direkt z.B. in
 [lichess.org/analysis](https://lichess.org/analysis) oder
 [chess.com/analysis](https://www.chess.com/analysis) einfügen.
+
+### Such-URL-Format
+
+Chessable verwendet ein eigenes URL-Format für die FEN-Suche:
+`/` im Stellungs-Teil wird durch `U` ersetzt, der Rest URL-kodiert. Beispiel:
+
+```
+FEN: 2r1k2r/ppqbbp1p/4p1pQ/n2nP1N1/8/3B4/P2N1PPP/1RB1R1K1 b k - 1 16
+URL: https://www.chessable.com/courses/fen/2r1k2rUppqbbp1pU4p1pQUn2nP1N1U8U3B4UP2N1PPPU1RB1R1K1%20b%20k%20-%201%2016/
+```
 
 ## Wie es funktioniert
 
