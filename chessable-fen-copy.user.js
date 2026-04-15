@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chessable FEN Copy
 // @namespace    https://github.com/cpamap/chessable-fen-copy
-// @version      0.1.0
+// @version      0.2.0
 // @description  Fügt einen Knopf hinzu, der die aktuelle Brettstellung auf Chessable als FEN in die Zwischenablage kopiert.
 // @author       you
 // @match        https://www.chessable.com/*
@@ -27,13 +27,31 @@
         // chessground renders into <cg-board> inside <cg-container> inside <.cg-wrap>
         return document.querySelector('cg-board')
             || document.querySelector('.cg-board')
+            || document.querySelector('[class*="cg-board"]')
             || null;
     }
 
     function getWrapEl() {
         return document.querySelector('.cg-wrap')
             || document.querySelector('cg-container')
+            || document.querySelector('[class*="cg-wrap"]')
             || null;
+    }
+
+    function debugDump() {
+        const board = getBoardEl();
+        const wrap  = getWrapEl();
+        const pieces = board ? board.querySelectorAll('piece') : [];
+        console.log('[Chessable FEN Copy] debug:', {
+            url: location.href,
+            boardFound: !!board,
+            wrapFound: !!wrap,
+            pieceCount: pieces.length,
+            firstPiece: pieces[0]
+                ? { class: pieces[0].className, style: pieces[0].getAttribute('style') }
+                : null,
+            cgWrapClasses: wrap ? wrap.className : null,
+        });
     }
 
     function getOrientation() {
@@ -206,6 +224,7 @@
             const fen = buildFEN();
             if (!fen) {
                 flash(btn, 'No board found', '#c62828');
+                debugDump();
                 return;
             }
             const ok = copyToClipboard(fen);
@@ -232,12 +251,18 @@
         }, 1200);
     }
 
-    // The Chessable trainer is a SPA; the board may appear after navigation.
+    // Always show the button on chessable.com; clicking will tell the user
+    // if no board is found (and dump debug info to the console).
     function ensureButton() {
-        if (getBoardEl()) createButton();
+        createButton();
     }
 
-    ensureButton();
-    const mo = new MutationObserver(() => ensureButton());
+    if (document.body) ensureButton();
+    else document.addEventListener('DOMContentLoaded', ensureButton, { once: true });
+
+    // Keep it alive across SPA navigations.
+    const mo = new MutationObserver(() => {
+        if (!document.getElementById(BTN_ID)) ensureButton();
+    });
     mo.observe(document.documentElement, { childList: true, subtree: true });
 })();
