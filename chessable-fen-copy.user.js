@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chessable FEN Copy + Search
 // @namespace    https://github.com/kahalm/chessable-extension
-// @version      0.8.0
+// @version      0.8.1
 // @description  FEN kopieren/suchen + letzte Punkte (nicht Overstudy) anzeigen.
 // @author       kahalm
 // @match        https://www.chessable.com/*
@@ -358,6 +358,10 @@
                     lastXP = pointsEl.textContent.replace(/[\s\u00a0]+/g, '');
                     updatePointsDisplay();
                 }
+            } else if (!type) {
+                // Empty notification = new puzzle loaded → reset.
+                lastXP = null;
+                hidePointsDisplay();
             }
         });
         pointsObserver.observe(notif, { childList: true, characterData: true, subtree: true });
@@ -368,6 +372,11 @@
         if (!el || !lastXP) return;
         el.textContent = lastXP + ' XP';
         el.style.display = 'inline-block';
+    }
+
+    function hidePointsDisplay() {
+        const el = document.getElementById('chessable-last-xp');
+        if (el) el.style.display = 'none';
     }
 
     // ---------- UI ----------
