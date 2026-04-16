@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chessable FEN Copy + Search
 // @namespace    https://github.com/kahalm/chessable-extension
-// @version      0.8.2
+// @version      0.8.3
 // @description  FEN kopieren/suchen + letzte Punkte (nicht Overstudy) anzeigen.
 // @author       kahalm
 // @match        https://www.chessable.com/*
@@ -343,35 +343,55 @@
     // "Overstudied" / "Incorrect" / "Alternative" are ignored.
 
     let lastXP = null;
+    let lastXpPlacement = null;
     let pointsObserver = null;
+    let parentObserver = null;
     let watchedNotif = null;
 
     function initPointsTracker() {
         const notif = document.querySelector('[data-testid="moveNotification"]');
         if (!notif) return;
 
-        // If the DOM element was replaced (new puzzle), reset and re-attach.
+        // If the DOM element was replaced, re-attach observers.
         if (watchedNotif && watchedNotif !== notif) {
-            lastXP = null;
-            hidePointsDisplay();
             pointsObserver?.disconnect();
+            parentObserver?.disconnect();
             pointsObserver = null;
+            parentObserver = null;
         }
 
         if (pointsObserver) return; // already watching this element
         watchedNotif = notif;
 
+        // Watch notification text for XP / Overstudied.
         pointsObserver = new MutationObserver(() => {
             const type = notif.textContent.trim();
             if (type === 'XP') {
                 const pointsEl = document.querySelector('span.current-points');
                 if (pointsEl) {
                     lastXP = pointsEl.textContent.replace(/[\s\u00a0]+/g, '');
+                    lastXpPlacement = extractBoardCm();
                     updatePointsDisplay();
                 }
             }
         });
         pointsObserver.observe(notif, { childList: true, characterData: true, subtree: true });
+
+        // Watch parent class changes (happen on puzzle transitions).
+        // When the board position changes from when XP was earned → new puzzle → reset.
+        const parent = notif.closest('div');
+        if (parent) {
+            parentObserver = new MutationObserver(() => {
+                if (!lastXP || !lastXpPlacement) return;
+                const current = extractBoardCm();
+                if (current && current !== lastXpPlacement) {
+                    lastXP = null;
+                    lastXpPlacement = null;
+                    hidePointsDisplay();
+                }
+            });
+            parentObserver.observe(parent, { attributes: true, attributeFilter: ['class'] });
+        }
     }
 
     function updatePointsDisplay() {
