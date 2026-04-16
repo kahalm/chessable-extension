@@ -1,13 +1,17 @@
 // ==UserScript==
 // @name         Chessable FEN Copy + Search
-// @namespace    https://github.com/cpamap/chessable-fen-copy
-// @version      0.4.0
+// @namespace    https://github.com/kahalm/chessable-extension
+// @version      0.7.1
 // @description  Fügt zwei Knöpfe hinzu: aktuelle Brettstellung als FEN in die Zwischenablage kopieren bzw. auf chessable.com nach Kursen mit dieser Stellung suchen.
-// @author       you
+// @author       kahalm
 // @match        https://www.chessable.com/*
 // @match        https://chessable.com/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
+// @homepageURL  https://github.com/kahalm/chessable-extension
+// @supportURL   https://github.com/kahalm/chessable-extension/issues
+// @updateURL    https://raw.githubusercontent.com/kahalm/chessable-extension/main/chessable-fen-copy.user.js
+// @downloadURL  https://raw.githubusercontent.com/kahalm/chessable-extension/main/chessable-fen-copy.user.js
 // ==/UserScript==
 
 (function () {
@@ -38,6 +42,8 @@
         const cmSquares = document.querySelectorAll('[data-square]');
         const cmPieces  = document.querySelectorAll('[data-piece]');
         const cgBoard   = document.querySelector('cg-board, .cg-board, [class*="cg-board"]');
+        const fiberFen  = extractFenFromReact();
+        const courseId  = currentCourseId();
         console.log('[Chessable FEN Copy] debug:', {
             url: location.href,
             cmSquaresFound: cmSquares.length,
@@ -47,7 +53,74 @@
                     parentSquare: cmPieces[0].closest('[data-square]')?.getAttribute('data-square') }
                 : null,
             cgBoardFound: !!cgBoard,
+            fiberFen,
+            courseId,
         });
+    }
+
+    // ---- React fiber FEN extraction (preferred) ----
+    //
+    // Chessable stores the current game state in React props. The board DOM
+    // node (`#board` or any element carrying data-square) has an attached
+    // React fiber (`__reactFiber$XXX`) whose ancestor fibers carry props
+    // like `fen` and `interactiveFen`. Reading those is the only reliable
+    // way to get side-to-move / castling / halfmove / fullmove.
+
+    const FEN_REGEX = /^[1-8rnbqkpRNBQKP/]+\s[wb]\s[KQkqA-Ha-h-]+\s(?:[a-h][1-8]|-)\s\d+\s\d+$/;
+
+    function isValidFen(s) {
+        return typeof s === 'string' && FEN_REGEX.test(s.trim());
+    }
+
+    function getReactFiber(el) {
+        if (!el) return null;
+        const key = Object.keys(el).find(k => k.startsWith('__reactFiber$'));
+        return key ? el[key] : null;
+    }
+
+    function collectFenCandidates(props, out) {
+        if (!props || typeof props !== 'object') return;
+        // interactiveFen = state after a user move; fen = lesson/base position.
+        // Which one matches the displayed board varies per page, so we
+        // collect both and pick by DOM match later.
+        if (isValidFen(props.interactiveFen)) out.push(props.interactiveFen.trim());
+        if (isValidFen(props.fen))            out.push(props.fen.trim());
+    }
+
+    function extractFenFromReact() {
+        // Start from any element anchored in the board tree.
+        const anchor = document.getElementById('board')
+            || document.querySelector('[data-square]')?.closest('#board, [class*="chessboard"]')
+            || document.querySelector('[data-square]');
+        if (!anchor) return null;
+
+        let fiber = getReactFiber(anchor);
+        if (!fiber) return null;
+
+        // Collect all FEN candidates from ancestor fibers.
+        const candidates = [];
+        let depth = 0;
+        while (fiber && depth < 40) {
+            collectFenCandidates(fiber.memoizedProps, candidates);
+            collectFenCandidates(fiber.pendingProps, candidates);
+            fiber = fiber.return;
+            depth++;
+        }
+        if (!candidates.length) return null;
+
+        // Prefer a FEN whose placement matches the currently displayed board.
+        // This disambiguates between e.g. `fen` (lesson start) and
+        // `interactiveFen` (after user move) — whichever actually matches
+        // the pieces on screen is the one we want.
+        const domPlacement = extractBoardCm();
+        if (domPlacement) {
+            const matched = candidates.find(c => c.split(' ')[0] === domPlacement);
+            if (matched) return matched;
+        }
+
+        // No DOM reference or no match: take the first candidate (which
+        // prefers interactiveFen over fen from the closest fiber).
+        return candidates[0];
     }
 
     // ---- cm-chessboard extraction (Chessable) ----
@@ -161,12 +234,17 @@
     }
 
     function buildFEN() {
+        // Preferred path: read FEN directly from Chessable's React state.
+        // This gives us correct side-to-move, castling, ep, halfmove, fullmove.
+        const fiberFen = extractFenFromReact();
+        if (fiberFen) return fiberFen;
+
+        // Fallback: reconstruct from DOM (piece placement only; metadata
+        // fields are best-effort defaults).
         const placement = extractBoard();
         if (!placement) return null;
 
         const stm = detectSideToMove() || 'w';
-        // We don't have reliable info on castling / ep / clocks from the DOM.
-        // Use sensible defaults.
         return `${placement} ${stm} KQkq - 0 1`;
     }
 
@@ -198,10 +276,62 @@
 
     // ---------- Chessable search URL ----------
 
+    function currentCourseId() {
+        // 1) URL path: /course/228856/... or /courses/228856/...
+        const urlM = /\/courses?\/(\d+)(?:\/|$)/.exec(location.pathname);
+        if (urlM) return urlM[1];
+
+        // 2) Any anchor on the page pointing at a course page.
+        //    Works on trainer/variation pages which usually link back to
+        //    the owning course via a "back" / breadcrumb link.
+        for (const a of document.querySelectorAll('a[href*="/course/"]')) {
+            const href = a.getAttribute('href') || '';
+            const m = /\/course\/(\d+)(?:\/|$)/.exec(href);
+            if (m) return m[1];
+        }
+
+        // 3) React props near the board: look for courseId / courseID /
+        //    course.id on any ancestor fiber.
+        const anchor = document.getElementById('board')
+            || document.querySelector('[data-square]');
+        if (anchor) {
+            let fiber = getReactFiber(anchor);
+            let depth = 0;
+            while (fiber && depth < 60) {
+                const id = fiberCourseId(fiber.memoizedProps)
+                        || fiberCourseId(fiber.pendingProps);
+                if (id) return id;
+                fiber = fiber.return;
+                depth++;
+            }
+        }
+
+        return null;
+    }
+
+    function fiberCourseId(props) {
+        if (!props || typeof props !== 'object') return null;
+        const candidates = [
+            props.courseId, props.courseID, props.course_id,
+            props.course?.id, props.course?.courseId,
+        ];
+        for (const c of candidates) {
+            if (c != null && /^\d+$/.test(String(c))) return String(c);
+        }
+        return null;
+    }
+
     function chessableSearchUrl(fen) {
-        // Chessable's FEN search URL replaces "/" in the placement with "U"
-        // and URL-encodes the rest (spaces -> %20). Trailing slash included.
-        const encoded = encodeURIComponent(fen.replace(/\//g, 'U'));
+        const courseId = currentCourseId();
+        if (courseId) {
+            // Per-course FEN search: "/" in placement becomes ";" (literal),
+            // spaces become %20. All other FEN chars are URL-safe, so we
+            // must NOT use encodeURIComponent (it would escape ";" to %3B).
+            const encoded = fen.replace(/\//g, ';').replace(/ /g, '%20');
+            return `https://www.chessable.com/course/${courseId}/fen/${encoded}/`;
+        }
+        // Fallback (no course id in URL): global FEN search, "/" -> "U".
+        const encoded = fen.replace(/\//g, 'U').replace(/ /g, '%20');
         return `https://www.chessable.com/courses/fen/${encoded}/`;
     }
 
