@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Chessable FEN Copy + Search
 // @namespace    https://github.com/kahalm/chessable-extension
-// @version      0.7.1
-// @description  Fügt zwei Knöpfe hinzu: aktuelle Brettstellung als FEN in die Zwischenablage kopieren bzw. auf chessable.com nach Kursen mit dieser Stellung suchen.
+// @version      0.8.0
+// @description  FEN kopieren/suchen + letzte Punkte (nicht Overstudy) anzeigen.
 // @author       kahalm
 // @match        https://www.chessable.com/*
 // @match        https://chessable.com/*
@@ -335,6 +335,41 @@
         return `https://www.chessable.com/courses/fen/${encoded}/`;
     }
 
+    // ---------- Points tracker ----------
+    //
+    // Watches <span data-testid="moveNotification"> for changes.
+    // When it reads "XP", the point value is grabbed from the sibling
+    // <span class="current-points"> (e.g. "+40\u00a0").
+    // "Overstudied" / "Incorrect" / "Alternative" are ignored.
+
+    let lastXP = null;
+    let pointsObserver = null;
+
+    function initPointsTracker() {
+        if (pointsObserver) return; // already watching
+        const notif = document.querySelector('[data-testid="moveNotification"]');
+        if (!notif) return;
+
+        pointsObserver = new MutationObserver(() => {
+            const type = notif.textContent.trim();
+            if (type === 'XP') {
+                const pointsEl = document.querySelector('span.current-points');
+                if (pointsEl) {
+                    lastXP = pointsEl.textContent.replace(/[\s\u00a0]+/g, '');
+                    updatePointsDisplay();
+                }
+            }
+        });
+        pointsObserver.observe(notif, { childList: true, characterData: true, subtree: true });
+    }
+
+    function updatePointsDisplay() {
+        const el = document.getElementById('chessable-last-xp');
+        if (!el || !lastXP) return;
+        el.textContent = lastXP + ' XP';
+        el.style.display = 'inline-block';
+    }
+
     // ---------- UI ----------
 
     const CONTAINER_ID = 'chessable-fen-tools';
@@ -404,6 +439,22 @@
             if (!win) flash(searchBtn, 'Popup blocked', '#c62828');
         });
 
+        const xpBadge = document.createElement('span');
+        xpBadge.id = 'chessable-last-xp';
+        Object.assign(xpBadge.style, {
+            display: 'none',
+            padding: '8px 10px',
+            fontSize: '13px',
+            fontWeight: 'bold',
+            fontFamily: 'system-ui, sans-serif',
+            background: '#f9a825',
+            color: '#333',
+            borderRadius: '6px',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+            lineHeight: '1',
+        });
+
+        wrap.appendChild(xpBadge);
         wrap.appendChild(copyBtn);
         wrap.appendChild(searchBtn);
         document.body.appendChild(wrap);
@@ -420,18 +471,19 @@
         }, 1200);
     }
 
-    // Always show the buttons on chessable.com; clicking will tell the user
-    // if no board is found (and dump debug info to the console).
     function ensureUi() {
         createUi();
+        initPointsTracker();
     }
 
     if (document.body) ensureUi();
     else document.addEventListener('DOMContentLoaded', ensureUi, { once: true });
 
-    // Keep the UI alive across SPA navigations.
+    // Keep the UI alive across SPA navigations and retry points tracker
+    // when the notification element appears later.
     const mo = new MutationObserver(() => {
         if (!document.getElementById(CONTAINER_ID)) ensureUi();
+        if (!pointsObserver) initPointsTracker();
     });
     mo.observe(document.documentElement, { childList: true, subtree: true });
 })();
