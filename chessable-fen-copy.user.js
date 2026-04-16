@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chessable FEN Copy + Search
 // @namespace    https://github.com/kahalm/chessable-extension
-// @version      0.8.3
+// @version      0.8.4
 // @description  FEN kopieren/suchen + letzte Punkte (nicht Overstudy) anzeigen.
 // @author       kahalm
 // @match        https://www.chessable.com/*
@@ -343,10 +343,27 @@
     // "Overstudied" / "Incorrect" / "Alternative" are ignored.
 
     let lastXP = null;
-    let lastXpPlacement = null;
+    let lastXpVariationFen = null;
     let pointsObserver = null;
     let parentObserver = null;
     let watchedNotif = null;
+
+    // Read the variation's BASE FEN from React (props.fen, NOT interactiveFen).
+    // This stays constant within a variation and changes on variation switch.
+    function getVariationFen() {
+        const anchor = document.getElementById('board')
+            || document.querySelector('[data-square]');
+        if (!anchor) return null;
+        let fiber = getReactFiber(anchor);
+        let depth = 0;
+        while (fiber && depth < 40) {
+            const props = fiber.memoizedProps;
+            if (props && isValidFen(props.fen)) return props.fen.trim();
+            fiber = fiber.return;
+            depth++;
+        }
+        return null;
+    }
 
     function initPointsTracker() {
         const notif = document.querySelector('[data-testid="moveNotification"]');
@@ -363,30 +380,31 @@
         if (pointsObserver) return; // already watching this element
         watchedNotif = notif;
 
-        // Watch notification text for XP / Overstudied.
+        // Watch notification text for XP.
         pointsObserver = new MutationObserver(() => {
             const type = notif.textContent.trim();
             if (type === 'XP') {
                 const pointsEl = document.querySelector('span.current-points');
                 if (pointsEl) {
                     lastXP = pointsEl.textContent.replace(/[\s\u00a0]+/g, '');
-                    lastXpPlacement = extractBoardCm();
+                    lastXpVariationFen = getVariationFen();
                     updatePointsDisplay();
                 }
             }
         });
         pointsObserver.observe(notif, { childList: true, characterData: true, subtree: true });
 
-        // Watch parent class changes (happen on puzzle transitions).
-        // When the board position changes from when XP was earned → new puzzle → reset.
+        // Watch parent class changes (happen on move/puzzle transitions).
+        // Compare the variation base FEN — it only changes between variations,
+        // not between moves within the same variation.
         const parent = notif.closest('div');
         if (parent) {
             parentObserver = new MutationObserver(() => {
-                if (!lastXP || !lastXpPlacement) return;
-                const current = extractBoardCm();
-                if (current && current !== lastXpPlacement) {
+                if (!lastXP || !lastXpVariationFen) return;
+                const currentVarFen = getVariationFen();
+                if (currentVarFen && currentVarFen !== lastXpVariationFen) {
                     lastXP = null;
-                    lastXpPlacement = null;
+                    lastXpVariationFen = null;
                     hidePointsDisplay();
                 }
             });
