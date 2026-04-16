@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chessable FEN Copy + Search
 // @namespace    https://github.com/kahalm/chessable-extension
-// @version      0.8.1
+// @version      0.8.2
 // @description  FEN kopieren/suchen + letzte Punkte (nicht Overstudy) anzeigen.
 // @author       kahalm
 // @match        https://www.chessable.com/*
@@ -344,11 +344,22 @@
 
     let lastXP = null;
     let pointsObserver = null;
+    let watchedNotif = null;
 
     function initPointsTracker() {
-        if (pointsObserver) return; // already watching
         const notif = document.querySelector('[data-testid="moveNotification"]');
         if (!notif) return;
+
+        // If the DOM element was replaced (new puzzle), reset and re-attach.
+        if (watchedNotif && watchedNotif !== notif) {
+            lastXP = null;
+            hidePointsDisplay();
+            pointsObserver?.disconnect();
+            pointsObserver = null;
+        }
+
+        if (pointsObserver) return; // already watching this element
+        watchedNotif = notif;
 
         pointsObserver = new MutationObserver(() => {
             const type = notif.textContent.trim();
@@ -358,10 +369,6 @@
                     lastXP = pointsEl.textContent.replace(/[\s\u00a0]+/g, '');
                     updatePointsDisplay();
                 }
-            } else if (!type) {
-                // Empty notification = new puzzle loaded → reset.
-                lastXP = null;
-                hidePointsDisplay();
             }
         });
         pointsObserver.observe(notif, { childList: true, characterData: true, subtree: true });
@@ -488,11 +495,12 @@
     if (document.body) ensureUi();
     else document.addEventListener('DOMContentLoaded', ensureUi, { once: true });
 
-    // Keep the UI alive across SPA navigations and retry points tracker
-    // when the notification element appears later.
+    // Keep the UI alive across SPA navigations. Always re-check the points
+    // tracker because Chessable replaces the notification element on each
+    // new puzzle (the old observer dies silently).
     const mo = new MutationObserver(() => {
         if (!document.getElementById(CONTAINER_ID)) ensureUi();
-        if (!pointsObserver) initPointsTracker();
+        initPointsTracker();
     });
     mo.observe(document.documentElement, { childList: true, subtree: true });
 })();
