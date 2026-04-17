@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chessable FEN Copy + Search
 // @namespace    https://github.com/kahalm/chessable-extension
-// @version      0.9.0
+// @version      0.9.1
 // @description  FEN kopieren/suchen + letzte Punkte (nicht Overstudy) anzeigen.
 // @author       kahalm
 // @match        https://www.chessable.com/*
@@ -492,6 +492,7 @@
     function ensureUi() {
         createUi();
         initPointsTracker();
+        if (lastXP) updatePointsDisplay();
     }
 
     if (document.body) ensureUi();
