@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chessable FEN Copy + Search
 // @namespace    https://github.com/kahalm/chessable-extension
-// @version      0.9.1
+// @version      0.9.2
 // @description  FEN kopieren/suchen + letzte Punkte (nicht Overstudy) anzeigen.
 // @author       kahalm
 // @match        https://www.chessable.com/*
@@ -10,8 +10,8 @@
 // @run-at       document-idle
 // @homepageURL  https://github.com/kahalm/chessable-extension
 // @supportURL   https://github.com/kahalm/chessable-extension/issues
-// @updateURL    https://raw.githubusercontent.com/kahalm/chessable-extension/main/chessable-fen-copy.user.js
-// @downloadURL  https://raw.githubusercontent.com/kahalm/chessable-extension/main/chessable-fen-copy.user.js
+// @updateURL    https://github.com/kahalm/chessable-extension/raw/main/chessable-fen-copy.user.js
+// @downloadURL  https://github.com/kahalm/chessable-extension/raw/main/chessable-fen-copy.user.js
 // ==/UserScript==
 
 (function () {
