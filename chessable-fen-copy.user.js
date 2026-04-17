@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Chessable FEN Copy + Search
 // @namespace    https://github.com/kahalm/chessable-extension
-// @version      0.9.2
+// @version      0.9.3
 // @description  FEN kopieren/suchen + letzte Punkte (nicht Overstudy) anzeigen.
 // @author       kahalm
 // @match        https://www.chessable.com/*
@@ -367,11 +367,7 @@
                     lastXP = pointsEl.textContent.replace(/[\s\u00a0]+/g, '');
                     updatePointsDisplay();
                 }
-            } else if (type === 'Overstudied') {
-                lastXP = null;
-                hidePointsDisplay();
             }
-            // "Incorrect" / "Alternative": keep badge as-is.
         });
         pointsObserver.observe(notif, { childList: true, characterData: true, subtree: true });
     }
@@ -489,9 +485,29 @@
         }, 1200);
     }
 
+    // Reset XP when user clicks "Next variation".
+    let nextVarListenerAttached = false;
+
+    function attachNextVariationListener() {
+        if (nextVarListenerAttached) return;
+        // Use event delegation on body — the button may not exist yet
+        // or may be re-created by React.
+        document.body.addEventListener('click', (e) => {
+            const btn = e.target.closest('button, a, [role="button"]');
+            if (!btn) return;
+            const text = btn.textContent.trim();
+            if (/^Next\s*(variation)?$/i.test(text)) {
+                lastXP = null;
+                hidePointsDisplay();
+            }
+        }, true);
+        nextVarListenerAttached = true;
+    }
+
     function ensureUi() {
         createUi();
         initPointsTracker();
+        attachNextVariationListener();
         if (lastXP) updatePointsDisplay();
     }
 
