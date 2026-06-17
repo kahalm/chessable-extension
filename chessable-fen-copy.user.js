@@ -2,7 +2,7 @@
 // @name         Chessable FEN Copy + Search
 // @namespace    https://github.com/kahalm/chessable-extension
 // @version      0.9.4
-// @description  FEN kopieren/suchen + letzte Punkte (nicht Overstudy) anzeigen.
+// @description  [EINGESTELLT — jetzt Teil von RepCheck: https://github.com/kahalm/repcheck] FEN kopieren/suchen + letzte Punkte (nicht Overstudy) anzeigen.
 // @author       kahalm
 // @match        https://www.chessable.com/*
 // @match        https://chessable.com/*

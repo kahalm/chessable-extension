@@ -1,5 +1,16 @@
 # Chessable FEN Copy + Search
 
+> ## ⚠️ Eingestellt / Archiviert
+>
+> Die Funktionalität dieses Userscripts (Copy FEN, Search FEN, XP-Anzeige) ist
+> seit **v1.9.0** in **[RepCheck](https://github.com/kahalm/repcheck)**
+> integriert — verfügbar als Browser-Extension (Chrome/Firefox) **und** als
+> Tampermonkey-Userscript. Bitte dorthin wechseln; dieses Repo wird nicht mehr
+> gepflegt.
+>
+> Das hier liegende Userscript funktioniert weiterhin standalone, erhält aber
+> keine Updates mehr.
+
 Tampermonkey-Userscript für [chessable.com](https://www.chessable.com): blendet
 unten rechts zwei Knöpfe ein:
 
